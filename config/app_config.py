@@ -47,6 +47,11 @@ class AppConfig(BaseConfig):
         "image/webp": "webp",
     }
 
+    VISION_PROVIDER = None
+    VISION_MODEL = None
+    VISION_MIN_CONFIDENCE = None
+    MISTRAL_API_KEY = None
+
     @classmethod
     def load_config(cls) -> None:
         """
@@ -72,6 +77,11 @@ class AppConfig(BaseConfig):
             cls.S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "")
             cls.S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "spotster")
             cls.S3_REGION = os.getenv("S3_REGION", "eu-central-1")
+
+            cls.VISION_PROVIDER = os.getenv("VISION_PROVIDER", "mistral")
+            cls.VISION_MODEL = os.getenv("VISION_MODEL", "pixtral-large-latest")
+            cls.VISION_MIN_CONFIDENCE = float(os.getenv("VISION_MIN_CONFIDENCE", "0.6"))
+            cls.MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
 
             allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
             cls.ALLOWED_ORIGINS = [

@@ -27,7 +27,14 @@ class SpottingReportService:
     matches to the nearest store, and creates the availability record.
     """
 
-    _recognition_engine = MonsterRecognitionEngine()
+    _recognition_engine = None
+
+    @classmethod
+    def _get_recognition_engine(cls) -> MonsterRecognitionEngine:
+        """Lazily initializes the recognition engine so config is loaded before provider selection."""
+        if cls._recognition_engine is None:
+            cls._recognition_engine = MonsterRecognitionEngine()
+        return cls._recognition_engine
 
     @classmethod
     def process_spotting(
@@ -61,7 +68,7 @@ class SpottingReportService:
 
         image_url = cls._upload_image(file_data, filename, content_type)
 
-        recognition_result = cls._recognition_engine.identify(file_data)
+        recognition_result = cls._get_recognition_engine().identify(file_data)
 
         if not recognition_result.is_match:
             report = SpottingReport.create(
@@ -183,6 +190,7 @@ class SpottingReportService:
                 "id": report.matched_monster_drink.id,
                 "name": report.matched_monster_drink.name,
                 "flavour": report.matched_monster_drink.flavour,
+                "image_url": report.matched_monster_drink.image_url,
             }
 
         if report.matched_store:

@@ -7,9 +7,7 @@ from app.init.logger_setup import LoggerSetup
 
 
 class RecognitionResult:
-    """
-    Value object representing the result of a monster drink recognition attempt.
-    """
+    """Value object representing the result of a monster drink recognition attempt."""
 
     def __init__(
         self,
@@ -25,42 +23,19 @@ class RecognitionResult:
 
 
 class RecognitionStrategy(ABC):
-    """
-    Abstract strategy interface for Monster drink image recognition.
-    Implementations can range from stub/mock to ML model-based recognisers.
-    """
+    """Abstract strategy interface for Monster drink image recognition."""
 
     @abstractmethod
     def identify(self, image_data: bytes) -> RecognitionResult:
-        """
-        Attempts to identify a Monster drink from the provided image data.
-
-        Args:
-            image_data: The raw image bytes to analyse.
-
-        Returns:
-            RecognitionResult: The recognition outcome.
-        """
+        """Attempts to identify a Monster drink from the provided image data."""
         pass
 
 
 class StubRecognitionStrategy(RecognitionStrategy):
-    """
-    Stub implementation of the recognition strategy.
-    Randomly selects a known Monster drink from the database to simulate a match.
-    Intended for development and testing until a real recognition model is integrated.
-    """
+    """Stub that randomly selects a Monster drink. For development and testing only."""
 
     def identify(self, image_data: bytes) -> RecognitionResult:
-        """
-        Simulates image recognition by randomly selecting a Monster drink.
-
-        Args:
-            image_data: The raw image bytes (not actually analysed in stub mode).
-
-        Returns:
-            RecognitionResult: A simulated match result.
-        """
+        """Simulates image recognition by randomly selecting a Monster drink."""
         logger = LoggerSetup.get_logger("general")
 
         all_monsters = list(MonsterDrink.select())
@@ -86,22 +61,28 @@ class StubRecognitionStrategy(RecognitionStrategy):
 
 
 class MonsterRecognitionEngine:
-    """
-    Facade that delegates image recognition to a pluggable strategy.
-    Defaults to StubRecognitionStrategy if no strategy is explicitly provided.
-    """
+    """Facade that delegates image recognition to a pluggable strategy."""
 
     def __init__(self, strategy: Optional[RecognitionStrategy] = None):
-        self._strategy = strategy or StubRecognitionStrategy()
+        self._strategy = strategy or self._create_default_strategy()
 
     def identify(self, image_data: bytes) -> RecognitionResult:
-        """
-        Delegates identification to the configured recognition strategy.
-
-        Args:
-            image_data: The raw image bytes to identify.
-
-        Returns:
-            RecognitionResult: The recognition outcome from the chosen strategy.
-        """
+        """Delegates identification to the configured recognition strategy."""
         return self._strategy.identify(image_data)
+
+    @staticmethod
+    def _create_default_strategy() -> RecognitionStrategy:
+        """Selects the recognition strategy based on configured vision provider."""
+        from config.app_config import AppConfig
+
+        logger = LoggerSetup.get_logger("general")
+        provider_name = AppConfig.VISION_PROVIDER
+
+        if provider_name == "mistral" and AppConfig.MISTRAL_API_KEY:
+            from app.services.spotting_services.mistral_vision_provider import MistralVisionProvider
+            from app.services.spotting_services.vision_llm_strategy import VisionLLMRecognitionStrategy
+            logger.info("Using Mistral Pixtral vision provider for recognition.")
+            return VisionLLMRecognitionStrategy(MistralVisionProvider())
+
+        logger.warning("No vision provider configured — falling back to stub recognition.")
+        return StubRecognitionStrategy()
