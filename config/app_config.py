@@ -39,6 +39,14 @@ class AppConfig(BaseConfig):
     S3_BUCKET_NAME = None
     S3_REGION = None
 
+    ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
+    MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024
+    CONTENT_TYPE_TO_EXT = {
+        "image/jpeg": "jpg",
+        "image/png": "png",
+        "image/webp": "webp",
+    }
+
     @classmethod
     def load_config(cls) -> None:
         """
