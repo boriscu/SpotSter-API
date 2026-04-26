@@ -25,7 +25,16 @@ monster_public_model = public_monster_namespace.model("MonsterDrinkPublic", {
 class PublicMonsterListEndpoint(Resource):
     """Public endpoint for browsing the Monster drink catalogue."""
 
-    @public_monster_namespace.doc(description="List all Monster drinks in the catalogue.")
+    @public_monster_namespace.doc(
+        description=(
+            "Returns the full Monster drink catalogue.\n\n"
+            "Lists every Monster drink in the database with product details, nutritional info, "
+            "product line tag, and image URL. No authentication required.\n\n"
+            "Use this to populate filter dropdowns, search suggestions, or a browsable catalogue in the app.\n\n"
+            "**Example:**\n"
+            "`GET /api/v1/public/monsters/`"
+        ),
+    )
     @public_monster_namespace.response(HttpStatus.OK.value, "Monsters fetched.")
     @public_monster_namespace.marshal_list_with(monster_public_model)
     def get(self):
@@ -37,7 +46,16 @@ class PublicMonsterListEndpoint(Resource):
 class PublicMonsterDetailEndpoint(Resource):
     """Public endpoint for viewing a single Monster drink."""
 
-    @public_monster_namespace.doc(description="Get a single Monster drink by ID.")
+    @public_monster_namespace.doc(
+        description=(
+            "Retrieve a single Monster drink by its ID.\n\n"
+            "Returns the full product record including nutritional details, product line tag, "
+            "and the ground truth image URL. No authentication required.\n\n"
+            "**Returns 404** if no Monster drink exists with the given ID.\n\n"
+            "**Example:**\n"
+            "`GET /api/v1/public/monsters/3`"
+        ),
+    )
     @public_monster_namespace.response(HttpStatus.OK.value, "Monster drink fetched.")
     @public_monster_namespace.marshal_with(monster_public_model)
     def get(self, monster_id: int):

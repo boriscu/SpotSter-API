@@ -42,7 +42,9 @@ monster_drink_parser.add_argument("image", type=FileStorage, location="files", h
 class MonsterDrinkListEndpoint(Resource):
     """Admin endpoint for listing and creating Monster drinks."""
 
-    @monster_drink_namespace.doc(description="List all Monster drinks.")
+    @monster_drink_namespace.doc(
+        description="Returns all Monster drink entries in the ground truth database, including image URLs and product line tags.",
+    )
     @monster_drink_namespace.response(HttpStatus.OK.value, "Monsters fetched.")
     @monster_drink_namespace.marshal_list_with(monster_drink_model)
     @jwt_required()
@@ -50,7 +52,20 @@ class MonsterDrinkListEndpoint(Resource):
         """Retrieve all Monster drink entries."""
         return MonsterDrinkRepository.get_all(MonsterDrink)
 
-    @monster_drink_namespace.doc(description="Create a new Monster drink with optional image upload.")
+    @monster_drink_namespace.doc(
+        description=(
+            "Create a new Monster drink entry in the ground truth database.\n\n"
+            "**Request format:** `multipart/form-data` with product fields and an optional image file.\n\n"
+            "**Required fields:** `name`, `flavour`.\n\n"
+            "**Optional fields:** `description`, `calories`, `sugar_grams`, `caffeine_mg`, `is_zero_sugar`, "
+            "`tag` (1=Original, 2=Ultra, 3=Java, 4=Juiced, 5=Special).\n\n"
+            "**Image upload:** Attach a JPEG, PNG, or WebP file (max 5MB) as the `image` field. "
+            "The image is uploaded to S3 under `monster-drinks/{slug}.{ext}` and the `image_url` is set automatically.\n\n"
+            "**Slug generation:** A URL-friendly slug is auto-generated from `name` and `flavour`.\n\n"
+            "**Example:**\n"
+            "`POST /api/v1/admin/monsters/` with form fields `name=Monster Ultra` and `flavour=Paradise`"
+        ),
+    )
     @monster_drink_namespace.expect(monster_drink_parser)
     @monster_drink_namespace.response(HttpStatus.CREATED.value, "Monster drink created.")
     @monster_drink_namespace.marshal_with(monster_drink_model)
@@ -68,7 +83,16 @@ class MonsterDrinkListEndpoint(Resource):
 class MonsterDrinkDetailEndpoint(Resource):
     """Admin endpoint for retrieving, updating, and deleting a single Monster drink."""
 
-    @monster_drink_namespace.doc(description="Get a single Monster drink by ID.")
+    @monster_drink_namespace.doc(
+        description=(
+            "Retrieve a single Monster drink by its database ID.\n\n"
+            "Returns the full product record including nutritional info, product line tag, "
+            "and the S3 image URL.\n\n"
+            "**Returns 404** if no Monster drink exists with the given ID.\n\n"
+            "**Example:**\n"
+            "`GET /api/v1/admin/monsters/3`"
+        ),
+    )
     @monster_drink_namespace.response(HttpStatus.OK.value, "Monster drink fetched.")
     @monster_drink_namespace.marshal_with(monster_drink_model)
     @jwt_required()
@@ -76,7 +100,19 @@ class MonsterDrinkDetailEndpoint(Resource):
         """Retrieve a Monster drink by its ID."""
         return MonsterDrinkRepository.get_by_id(MonsterDrink, record_id)
 
-    @monster_drink_namespace.doc(description="Update a Monster drink with optional image replacement.")
+    @monster_drink_namespace.doc(
+        description=(
+            "Update an existing Monster drink entry.\n\n"
+            "**Request format:** `multipart/form-data`. Only include the fields you want to change — "
+            "omitted fields are left unchanged.\n\n"
+            "**Image replacement:** If a new `image` file is attached, it replaces the existing S3 image. "
+            "The old image is deleted after the new one is confirmed uploaded.\n\n"
+            "**Slug update:** If `name` or `flavour` changes, the slug and S3 image key are updated accordingly.\n\n"
+            "**Returns 404** if no Monster drink exists with the given ID.\n\n"
+            "**Example:**\n"
+            "`PUT /api/v1/admin/monsters/3` with form field `calories=160`"
+        ),
+    )
     @monster_drink_namespace.expect(monster_drink_parser)
     @monster_drink_namespace.response(HttpStatus.OK.value, "Monster drink updated.")
     @monster_drink_namespace.marshal_with(monster_drink_model)
@@ -88,7 +124,16 @@ class MonsterDrinkDetailEndpoint(Resource):
         data = {k: v for k, v in args.items() if v is not None}
         return MonsterDrinkRepository.update_with_image(record_id, data, image)
 
-    @monster_drink_namespace.doc(description="Delete a Monster drink and its image.")
+    @monster_drink_namespace.doc(
+        description=(
+            "Delete a Monster drink and its associated S3 image.\n\n"
+            "The database record is removed first, then the S3 image is cleaned up. "
+            "This also affects any store availability records referencing this monster.\n\n"
+            "**Returns 404** if no Monster drink exists with the given ID.\n\n"
+            "**Example:**\n"
+            "`DELETE /api/v1/admin/monsters/3`"
+        ),
+    )
     @monster_drink_namespace.response(HttpStatus.OK.value, "Monster drink deleted.")
     @jwt_required()
     def delete(self, record_id: int):

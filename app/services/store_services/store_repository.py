@@ -47,20 +47,28 @@ class StoreRepository(BaseRepository):
     @classmethod
     def get_stores(
         cls,
-        latitude: Optional[float] = None,
-        longitude: Optional[float] = None,
-        limit: int = 20,
+        sw_lat: Optional[float] = None,
+        sw_lng: Optional[float] = None,
+        ne_lat: Optional[float] = None,
+        ne_lng: Optional[float] = None,
+        center_lat: Optional[float] = None,
+        center_lng: Optional[float] = None,
+        limit: int = 50,
         offset: int = 0,
         search: Optional[str] = None,
         flavour_slugs: Optional[List[str]] = None,
         tags: Optional[List[int]] = None,
         spotted_since: Optional[datetime] = None,
     ) -> Dict[str, Any]:
-        """Returns a paginated list of stores with available monsters, sorted by distance if coordinates provided.
+        """Returns stores within the map viewport, with filtering and pagination.
 
         Args:
-            latitude: User's latitude coordinate. Optional — if omitted, results are sorted by name.
-            longitude: User's longitude coordinate. Optional — if omitted, results are sorted by name.
+            sw_lat: Southwest corner latitude of the visible map area.
+            sw_lng: Southwest corner longitude of the visible map area.
+            ne_lat: Northeast corner latitude of the visible map area.
+            ne_lng: Northeast corner longitude of the visible map area.
+            center_lat: Map center latitude for distance sorting within the viewport.
+            center_lng: Map center longitude for distance sorting within the viewport.
             limit: Maximum number of stores to return per page.
             offset: Number of stores to skip for pagination.
             search: Free-text search across store names and monster names/flavours.
@@ -80,18 +88,34 @@ class StoreRepository(BaseRepository):
         if store_ids is not None:
             query = query.where(Store.id.in_(store_ids))
 
+        has_bounds = all(v is not None for v in [sw_lat, sw_lng, ne_lat, ne_lng])
+        if has_bounds:
+            if sw_lng <= ne_lng:
+                query = query.where(
+                    (Store.latitude >= sw_lat)
+                    & (Store.latitude <= ne_lat)
+                    & (Store.longitude >= sw_lng)
+                    & (Store.longitude <= ne_lng)
+                )
+            else:
+                query = query.where(
+                    (Store.latitude >= sw_lat)
+                    & (Store.latitude <= ne_lat)
+                    & ((Store.longitude >= sw_lng) | (Store.longitude <= ne_lng))
+                )
+
         stores = list(query)
         total = len(stores)
 
-        if latitude is not None and longitude is not None:
+        has_center = center_lat is not None and center_lng is not None
+        if has_center:
             stores_ranked = [
-                (s, cls._haversine_distance(latitude, longitude, s.latitude, s.longitude))
-                for s in stores
+                (store, cls._haversine_distance(center_lat, center_lng, store.latitude, store.longitude))
+                for store in stores
             ]
             stores_ranked.sort(key=lambda x: x[1])
         else:
-            stores_ranked = sorted(stores, key=lambda s: s.name)
-            stores_ranked = [(s, None) for s in stores_ranked]
+            stores_ranked = [(store, None) for store in sorted(stores, key=lambda s: s.name)]
 
         page = stores_ranked[offset:offset + limit]
 

@@ -24,7 +24,17 @@ login_response_model = auth_namespace.model("LoginResponse", {
 class AuthEndpoint(Resource):
     """Admin authentication endpoint for login and token validation."""
 
-    @auth_namespace.doc(description="Log in using an email and password.")
+    @auth_namespace.doc(
+        description=(
+            "Authenticate an admin user and receive a JWT access token.\n\n"
+            "**Request body:** JSON with `email` and `password`.\n\n"
+            "**On success:** Returns an `access_token` to use as `Authorization: Bearer <token>` "
+            "on all admin endpoints.\n\n"
+            "**On failure:** Returns 401 if credentials are invalid.\n\n"
+            "**Example:**\n"
+            '`POST /api/v1/auth/` with `{"email": "admin@spotster.com", "password": "your_password"}`'
+        ),
+    )
     @auth_namespace.expect(login_request_model, validate=True)
     @auth_namespace.response(HttpStatus.OK.value, "Login Successful", model=login_response_model)
     @auth_namespace.response(HttpStatus.UNAUTHORIZED.value, "Unauthorized")
@@ -42,7 +52,13 @@ class AuthEndpoint(Resource):
         else:
             return {"msg": "Password is incorrect"}, HttpStatus.UNAUTHORIZED.value
 
-    @auth_namespace.doc(description="Check the validity of the current user's JWT token.")
+    @auth_namespace.doc(
+        description=(
+            "Validates the current JWT token.\n\n"
+            "Use this to verify that a stored token is still valid before making admin requests. "
+            "Returns 200 if valid, 401 if expired or missing."
+        ),
+    )
     @auth_namespace.response(HttpStatus.OK.value, "Token is valid")
     @auth_namespace.response(HttpStatus.UNAUTHORIZED.value, "Unauthorized")
     @jwt_required()

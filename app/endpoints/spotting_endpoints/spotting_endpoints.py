@@ -43,7 +43,26 @@ spotting_report_model = spotting_namespace.model("SpottingReport", {
 class SpottingListEndpoint(Resource):
     """Endpoint for submitting and listing spotting reports."""
 
-    @spotting_namespace.doc(description="Submit a new Monster drink spotting report.")
+    @spotting_namespace.doc(
+        description=(
+            "Submit a photo of a Monster drink spotted in the wild.\n\n"
+            "**Request format:** `multipart/form-data` with three fields:\n"
+            "- `file` (required) — image file (JPEG, PNG, or WebP)\n"
+            "- `latitude` (required) — latitude where the photo was taken\n"
+            "- `longitude` (required) — longitude where the photo was taken\n\n"
+            "**Processing pipeline:**\n"
+            "1. Image is uploaded to S3\n"
+            "2. Vision LLM identifies which Monster drink is in the photo\n"
+            "3. Nearest store within 1km is matched to the coordinates\n"
+            "4. If both match, the store's availability record is updated\n\n"
+            "**Possible outcomes:**\n"
+            "- `matched` — Monster identified and store found, availability updated\n"
+            "- `rejected` — image is not a Monster drink, or no store nearby, or unknown variant\n\n"
+            "No authentication required.\n\n"
+            "**Example:**\n"
+            "`POST /api/v1/public/spottings/` with `file=<image>`, `latitude=44.8125`, `longitude=20.4612`"
+        ),
+    )
     @spotting_namespace.expect(spotting_upload_parser)
     @spotting_namespace.response(HttpStatus.CREATED.value, "Spotting processed.")
     def post(self):
@@ -69,7 +88,21 @@ class SpottingListEndpoint(Resource):
 
         return result, HttpStatus.CREATED.value
 
-    @spotting_namespace.doc(description="List spotting reports with pagination.")
+    @spotting_namespace.doc(
+        description=(
+            "List all spotting reports, newest first, with pagination.\n\n"
+            "Returns a paginated list of spotting reports including image URLs, coordinates, "
+            "processing status, and matched monster/store IDs.\n\n"
+            "**Pagination:** Use `limit` (default 20) and `offset` (default 0) query parameters.\n\n"
+            "**Response format:**\n"
+            "```json\n"
+            '{"reports": [...], "total": 42, "limit": 20, "offset": 0}\n'
+            "```\n\n"
+            "No authentication required.\n\n"
+            "**Example:**\n"
+            "`GET /api/v1/public/spottings/?limit=10&offset=20`"
+        ),
+    )
     @spotting_namespace.expect(spotting_list_parser)
     @spotting_namespace.response(HttpStatus.OK.value, "Reports fetched.")
     def get(self):
@@ -107,7 +140,17 @@ class SpottingListEndpoint(Resource):
 class SpottingDetailEndpoint(Resource):
     """Endpoint for retrieving a single spotting report."""
 
-    @spotting_namespace.doc(description="Get a spotting report by ID.")
+    @spotting_namespace.doc(
+        description=(
+            "Retrieve a single spotting report by its ID.\n\n"
+            "Returns the full report including the uploaded image URL, coordinates, processing status "
+            "(`pending`, `matched`, or `rejected`), matched monster/store IDs, and rejection reason if applicable.\n\n"
+            "No authentication required.\n\n"
+            "**Returns 404** if no report exists with the given ID.\n\n"
+            "**Example:**\n"
+            "`GET /api/v1/public/spottings/12`"
+        ),
+    )
     @spotting_namespace.response(HttpStatus.OK.value, "Report fetched.")
     @spotting_namespace.marshal_with(spotting_report_model)
     def get(self, report_id: int):
