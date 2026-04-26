@@ -26,6 +26,7 @@ class MonsterDrink(BaseModel):
     caffeine_mg = IntegerField(null=True)
     is_zero_sugar = BooleanField(default=False)
     image_url = TextField(null=True)
+    tag = IntegerField(null=True)
 
     class Meta:
         table_name = "monster_drink"

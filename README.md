@@ -1,94 +1,213 @@
 # SpotSter API
 
-SpotSter is a robust, Python Flask-based API backend designed for a Monster Energy drink spotting application. The core objective of the API is to allow users to report "spottings" of specific Monster drinks with their geographic coordinates and photos. The backend processes the sighting, leverages image recognition to match the product, and updates a global availability map for others to see where their favourite drinks can be found.
+SpotSter is a Python Flask API backend for a Monster Energy drink spotting application. Users report sightings of Monster drinks by uploading photos with geographic coordinates. The backend processes the image through a vision LLM to identify the product, matches it to the nearest store, and updates a global availability map.
 
 ## Features
 
-*   **Public Spotting & Catalogue:** Users can upload spotting photos with geographic coordinates (latitude/longitude), and view the global database of Monster drinks and stores without requiring authentication.
-*   **Image Recognition:** Spotting submissions pass through a generic recognition engine (currently using a stub strategy that simulates detection) to link user uploads to ground-truth products.
-*   **Admin Dashboard:** JWT-protected endpoints to manage (CRUD) the ground truth database of `MonsterDrink` variations and physical `Store` locations.
-*   **Unique Inventory Tracking:** Complex constraints ensure that the database models physical reality accurately (e.g., maintaining a unique store+drink availability record without duplicates).
-*   **Modular Architecture:** Designed with maintainability in mind, utilizing the App Factory pattern, robust Class-Based Configurations, Peewee ORM, and dedicated Repository/Service-layers mirroring enterprise architecture standards.
-*   **Object Storage Integration:** S3 client compatibility (e.g., AWS S3, MinIO) for secure, scalable image upload and sharing.
-*   **Dockerized Ecosystem:** Painless setup containing both the API layer (via Gunicorn) and an Alpine PostgreSQL database out-of-the-box.
+*   **Spotting Flow:** Users upload a photo + coordinates. The image is stored in S3, identified via a pluggable vision LLM (currently Mistral Pixtral), matched to a known Monster variant, linked to the nearest store, and the availability record is created or refreshed.
+*   **Monster Catalogue:** Admin-managed ground truth database of Monster Energy drink variants, each with name, flavour, nutritional info, product line tag, and a reference image stored in S3.
+*   **Store Discovery:** Single public endpoint for browsing stores with distance sorting, text search (store name or monster name/flavour), tag/flavour filtering, recency filtering, and pagination.
+*   **Store Detail:** Detailed store view with available monsters (sorted by last spotted), recent spotting images, and aggregate counts.
+*   **Vision Recognition Engine:** Strategy pattern with a `VisionProvider` abstraction. Swap LLM providers (Mistral, Anthropic, OpenAI) by implementing one method and updating the env config.
+*   **S3 Storage:** Image upload/deletion for both admin product images and user spotting photos. Compatible with any S3-compatible service (AWS, DigitalOcean Spaces, MinIO).
+*   **Dockerized:** API (Gunicorn) + PostgreSQL, ready to run with `docker-compose up`.
 
 ## Prerequisites
 
 1.  **Docker Desktop** (or Docker Engine + Docker Compose)
-2.  **(Optional)** Python 3.12+ (if running outside of Docker for development)
-3.  Any S3 compatible object storage instance (e.g., AWS S3, DigitalOcean Spaces, MinIO).
+2.  Any S3-compatible object storage (AWS S3, DigitalOcean Spaces, MinIO)
+3.  A Mistral API key (or another supported vision provider)
+4.  **(Optional)** Python 3.12+ if running outside Docker
 
 ## Initial Setup
 
-1. **Clone the repository:** Ensure you are in the project root `C:\Projekti\SpotSter-API`.
-2. **Setup Environment Variables:** We have provided a template for the environment variables.
-    *   Copy the `.env.example` file and rename it to `.env`:
-        ```bash
-        cp .env.example .env
-        ```
-    *   Open `.env` and fill in your custom values. Be specifically sure to set:
-        *   `JWT_SECRET_KEY`: A strong, random string (e.g., generated with `openssl rand -hex 32`).
-        *   `S3_*` values: To support uploading of spotting images.
-        *   `ADMIN_EMAIL` and `ADMIN_PASSWORD`: Used to generate the initial admin superuser.
+1.  **Clone the repository**
 
-3. **Build and Run the Containers:**
+2.  **Configure environment variables:**
+    ```bash
+    cp .env.example .env
+    ```
+    Fill in the required values:
+    *   `JWT_SECRET_KEY` — a strong random string (`openssl rand -hex 32`)
+    *   `S3_*` — your object storage credentials
+    *   `MISTRAL_API_KEY` — for image recognition
+    *   `ADMIN_EMAIL` / `ADMIN_PASSWORD` — initial admin credentials
+
+3.  **Build and start:**
     ```bash
     docker-compose up -d --build
     ```
-   This will pull the Postgres image, build the Python 3.12 Flask image, and start both containers. The API will be exposed on `http://localhost:5000`.
+    API runs on `http://localhost:5000`.
 
-4. **Initialize Database and Admin:**
-    Since the application uses `peewee-migrate`, you must handle migrations manually via built-in CLI commands from the API container.
-    *   **Health Check:** Wait until the database is ready:
-        ```bash
-        docker-compose exec api flask db-health-check
-        ```
-    *   **Run Migrations:** Initialize the database schema:
-        ```bash
-        docker-compose exec api flask db-migrate
-        ```
-    *   **Seed Admin User:** Generate your initial admin using the credentials you defined in the `.env` file:
-        ```bash
-        docker-compose exec api flask seed-admin
-        ```
+4.  **Initialize the database:**
+    ```bash
+    docker-compose exec api flask db-health-check
+    docker-compose exec api flask db-migrate
+    docker-compose exec api flask seed-admin
+    ```
 
-## Utilizing the API
+## API Workflows
 
-The API exposes a comprehensive, interactive Swagger UI out of the box. 
-**Navigate your browser to `http://localhost:5000/api/1.0/`** to explore, test, and authenticate against all available endpoints.
+### Authentication (Admin)
 
-### Authentication Flow (Admin Only)
+1.  `POST /api/v1/auth/` with `{"email": "...", "password": "..."}` to get an access token.
+2.  Use the token as `Authorization: Bearer <token>` header on admin endpoints.
+3.  In Swagger UI (`http://localhost:5000/api/1.0/`), click **Authorize** and enter `Bearer <token>`.
 
-To interact with the `/api/v1/admin/monsters` or `/api/v1/admin/stores` endpoints, you must authenticate.
-1. Make a POST request to `/api/v1/auth/` containing `{ "email": "your_admin_email", "password": "your_password" }`.
-2. Grab the returned `access_token`.
-3. In the Swagger UI, click the **Authorize** lock icon button at the top of the page.
-4. Provide the token using the format: `Bearer <your_token>` and click Authorize.
+### Admin: Manage Monster Drinks
 
-### Core Endpoints Overview
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/admin/monsters/` | List all monsters |
+| POST | `/api/v1/admin/monsters/` | Create a monster (`multipart/form-data` with form fields + optional `image` file) |
+| GET | `/api/v1/admin/monsters/<id>` | Get a single monster |
+| PUT | `/api/v1/admin/monsters/<id>` | Update a monster (same format as create, image replaces old one in S3) |
+| DELETE | `/api/v1/admin/monsters/<id>` | Delete a monster and its S3 image |
 
-*   **Auth:** `/api/v1/auth/` (POST, GET - manage and validate admin sessions)
-*   **Monsters Admin:** `/api/v1/admin/monsters/` (GET, POST, PUT, DELETE - admin ground truth catalog management)
-*   **Stores Admin:** `/api/v1/admin/stores/` (GET, POST, PUT, DELETE - manage known store coordinates)
-*   **Public Catalogue:** `/api/v1/monsters/` and `/api/v1/stores/` (GET - fetch available products and stores with current inventory availability)
-*   **Spottings:** `/api/v1/spottings/` 
-    *   **POST:** *Requires a `multipart/form-data` payload containing an image `file`, `latitude`, and `longitude`.* 
+Monster fields: `name`, `flavour`, `description`, `calories`, `sugar_grams`, `caffeine_mg`, `is_zero_sugar`, `tag` (1=Original, 2=Ultra, 3=Java, 4=Juiced, 5=Special), `image` (file upload).
 
-## Project Structure Highlights
+### Admin: Manage Stores
 
-*   **`/app/endpoints/`:** Contains Flask-RESTX controller route registrations separated by domain namespaces (e.g., auth, spottings, public).
-*   **`/app/models/`:** Definiton of PG tables (`peewee`) and basic Enums/Maps mappings mapping HTTP statues.
-*   **`/app/services/`:** Segregation of all business and data logic away from the API boundary. Highlights include the facade `spotting_report_service.py`, generic `base_repository.py`, and the S3 handler `storage_service.py`.
-*   **`/app/commands/`:** Extends Flask CLI to provide utilities like db migrating and scripting administrative tasks.
-*   **`/config/`:** Houses `AppConfig`, reading immediately from the environment payload to securely bootstrap configurations. 
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/admin/stores/` | List all stores |
+| POST | `/api/v1/admin/stores/` | Create a store (JSON: `name`, `address`, `latitude`, `longitude`) |
+| GET | `/api/v1/admin/stores/<id>` | Get a single store |
+| PUT | `/api/v1/admin/stores/<id>` | Update a store |
+| DELETE | `/api/v1/admin/stores/<id>` | Delete a store |
+
+### Public: Submit a Spotting
+
+`POST /api/v1/public/spottings/` — `multipart/form-data` with:
+*   `file` — photo of the Monster drink
+*   `latitude` / `longitude` — where the photo was taken
+
+**Flow:** Image is validated and uploaded to S3. The vision LLM receives the photo alongside all known Monster slugs and attempts identification. If matched, the nearest store (within 1km) is found and availability is recorded. The response includes the matched monster (with reference image URL) and store info.
+
+### Public: Browse Stores
+
+`GET /api/v1/public/stores/` — single endpoint with optional query params:
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `lat` | float | User latitude (enables distance sorting) |
+| `lng` | float | User longitude |
+| `limit` | int | Page size (default 20) |
+| `offset` | int | Skip N stores for pagination |
+| `search` | string | Search by store name or monster name/flavour |
+| `tags` | string | Comma-separated tag values (e.g. `1,2` for Original + Ultra) |
+| `flavours` | string | Comma-separated monster slugs |
+| `spotted_since` | string | ISO date (e.g. `2026-04-01`) — only stores with spottings after this date |
+
+Response:
+```json
+{
+  "stores": [
+    {
+      "id": 1,
+      "name": "Store Name",
+      "address": "...",
+      "latitude": 44.81,
+      "longitude": 20.46,
+      "distance_km": 0.5,
+      "available_monsters": [
+        {
+          "id": 1,
+          "name": "Monster Ultra Sunrise",
+          "flavour": "Ultra Sunrise",
+          "slug": "monster-ultra-sunrise",
+          "image_url": "...",
+          "is_zero_sugar": true,
+          "tag": 2,
+          "last_spotted_at": "2026-04-25 22:00:00"
+        }
+      ]
+    }
+  ],
+  "total": 45,
+  "limit": 20,
+  "offset": 0
+}
+```
+
+### Public: Store Detail
+
+`GET /api/v1/public/stores/<id>` — returns full store info with:
+*   Available monsters sorted by last spotted
+*   Last 10 spotting report images with matched monster info
+*   `flavour_count` and `total_spottings` counts
+
+### Public: Monster Catalogue
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/public/monsters/` | List all Monster drinks |
+| GET | `/api/v1/public/monsters/<id>` | Get a single Monster drink |
+
+### Public: Available Filters
+
+`GET /api/v1/public/filters` — returns tags that have at least one monster, with counts. Used to populate filter UI.
+
+```json
+{
+  "tags": [
+    {"value": 2, "label": "Ultra", "count": 5},
+    {"value": 1, "label": "Original", "count": 3}
+  ]
+}
+```
+
+## Vision Recognition Architecture
+
+The recognition engine uses a strategy pattern with two layers of abstraction:
+
+1.  **`RecognitionStrategy`** — defines the recognition approach (vision LLM vs. CLIP vs. fine-tuned model)
+2.  **`VisionProvider`** — defines the LLM provider within the vision LLM strategy
+
+To add a new provider (e.g. OpenAI):
+1.  Create `app/services/spotting_services/openai_vision_provider.py` implementing `VisionProvider.analyze_image()`
+2.  Add a branch in `MonsterRecognitionEngine._create_default_strategy()`
+3.  Set `VISION_PROVIDER=openai` and `OPENAI_API_KEY=...` in `.env`
+
+The prompt, response parsing, and monster matching logic in `VisionLLMRecognitionStrategy` stays untouched.
+
+Config: `VISION_PROVIDER`, `VISION_MODEL`, `VISION_MIN_CONFIDENCE`, and the provider-specific API key.
+
+## Project Structure
+
+```
+app/
+  endpoints/          Route handlers grouped by namespace
+  models/
+    pg/               Peewee ORM models (BaseModel with auto timestamps)
+    enums/            HttpStatus, SpottingStatus, MonsterTag
+  services/
+    base_crud_services/   Generic CRUD repository
+    monster_drink_services/   Monster CRUD + S3 image lifecycle
+    store_services/       Store queries, proximity search, filtering
+    spotting_services/    Spotting flow orchestration, recognition engine, vision providers
+    storage_service.py    S3 upload/delete/presign
+  commands/           Flask CLI (migrations, seeding)
+  helpers/            Response generation, slug generation
+  init/               App bootstrap (DB, logging, Sentry, error handlers)
+config/               AppConfig (env-based)
+migrations/           Peewee-migrate migration scripts
+```
 
 ## Making Schema Changes
-If you modify the models inside `/app/models/pg/`:
-1. Generate an automatic migration patch:
+
+1.  Create a migration in `migrations/`:
     ```bash
-    docker-compose exec api flask create-migration my_new_feature_name
+    docker-compose exec api flask create-migration my_change_name
     ```
-2. Apply the change:
+    Or write a manual migration file following the pattern in `migrations/`.
+
+2.  Apply:
     ```bash
     docker-compose exec api flask db-migrate
+    ```
+
+3.  Rollback:
+    ```bash
+    docker-compose exec api flask db-rollback
     ```

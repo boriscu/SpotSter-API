@@ -22,6 +22,10 @@ spotting_upload_parser.add_argument(
     help="Longitude coordinate where the photo was taken",
 )
 
+spotting_list_parser = spotting_namespace.parser()
+spotting_list_parser.add_argument("limit", type=int, location="args", default=20, help="Max reports to return")
+spotting_list_parser.add_argument("offset", type=int, location="args", default=0, help="Number of reports to skip")
+
 spotting_report_model = spotting_namespace.model("SpottingReport", {
     "id": fields.Integer(description="Report ID"),
     "image_url": fields.String(description="S3 URL of the uploaded image"),
@@ -65,12 +69,38 @@ class SpottingListEndpoint(Resource):
 
         return result, HttpStatus.CREATED.value
 
-    @spotting_namespace.doc(description="List all spotting reports.")
+    @spotting_namespace.doc(description="List spotting reports with pagination.")
+    @spotting_namespace.expect(spotting_list_parser)
     @spotting_namespace.response(HttpStatus.OK.value, "Reports fetched.")
-    @spotting_namespace.marshal_list_with(spotting_report_model)
     def get(self):
-        """Retrieve all spotting reports."""
-        return list(SpottingReport.select().order_by(SpottingReport.created_at.desc()))
+        """Retrieve spotting reports with pagination."""
+        args = spotting_list_parser.parse_args()
+        limit = args.get("limit", 20)
+        offset = args.get("offset", 0)
+
+        query = SpottingReport.select().order_by(SpottingReport.created_at.desc())
+        total = query.count()
+        reports = list(query.offset(offset).limit(limit))
+
+        return {
+            "reports": [
+                {
+                    "id": report.id,
+                    "image_url": report.image_url,
+                    "latitude": report.latitude,
+                    "longitude": report.longitude,
+                    "status": report.status,
+                    "matched_monster_drink_id": report.matched_monster_drink_id,
+                    "matched_store_id": report.matched_store_id,
+                    "rejection_reason": report.rejection_reason,
+                    "created_at": str(report.created_at),
+                }
+                for report in reports
+            ],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
 
 
 @spotting_namespace.route("/<int:report_id>", methods=["GET"])

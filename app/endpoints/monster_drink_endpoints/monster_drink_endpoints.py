@@ -21,6 +21,7 @@ monster_drink_model = monster_drink_namespace.model("MonsterDrink", {
     "caffeine_mg": fields.Integer(description="Caffeine content in milligrams"),
     "is_zero_sugar": fields.Boolean(description="Whether the drink is zero sugar"),
     "image_url": fields.String(description="Ground truth image URL"),
+    "tag": fields.Integer(description="Product line tag (1=Original, 2=Ultra, 3=Java, 4=Juiced, 5=Special)"),
     "created_at": fields.DateTime(readonly=True),
     "updated_at": fields.DateTime(readonly=True),
 })
@@ -33,6 +34,7 @@ monster_drink_parser.add_argument("calories", type=int, location="form", help="C
 monster_drink_parser.add_argument("sugar_grams", type=float, location="form", help="Sugar content in grams")
 monster_drink_parser.add_argument("caffeine_mg", type=int, location="form", help="Caffeine content in milligrams")
 monster_drink_parser.add_argument("is_zero_sugar", type=inputs.boolean, location="form", help="Whether the drink is zero sugar")
+monster_drink_parser.add_argument("tag", type=int, location="form", help="Product line tag (1=Original, 2=Ultra, 3=Java, 4=Juiced, 5=Special)")
 monster_drink_parser.add_argument("image", type=FileStorage, location="files", help="Product image (JPEG, PNG, or WebP, max 5MB)")
 
 

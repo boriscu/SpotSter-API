@@ -96,9 +96,14 @@ class SpottingReportService:
                     f"at {nearest_store.name}"
                 )
             except IntegrityError:
+                availability = StoreMonsterAvailability.get(
+                    (StoreMonsterAvailability.store == nearest_store)
+                    & (StoreMonsterAvailability.monster_drink == recognition_result.matched_monster_drink)
+                )
+                availability.save()
                 logger.info(
-                    f"Availability already exists: {recognition_result.matched_monster_drink.name} "
-                    f"at {nearest_store.name} — skipping duplicate."
+                    f"Availability re-spotted: {recognition_result.matched_monster_drink.name} "
+                    f"at {nearest_store.name} — updated_at bumped."
                 )
 
         report = SpottingReport.create(

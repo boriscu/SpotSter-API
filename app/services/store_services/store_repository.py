@@ -1,52 +1,269 @@
-from typing import Dict, List, Optional
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 import math
 
 from app.models.pg.store import Store
 from app.models.pg.store_monster_availability import StoreMonsterAvailability
 from app.models.pg.monster_drink import MonsterDrink
+from app.models.pg.spotting_report import SpottingReport
 from app.services.base_crud_services.base_repository import BaseRepository
 
 
 class StoreRepository(BaseRepository):
-    """
-    Repository for store data access operations.
-    Extends BaseRepository with availability lookups and proximity search.
-    """
+    """Repository for store data access with proximity search, filtering, and detail views."""
 
     @staticmethod
     def get_availability(store_id: int) -> List[Dict]:
-        """
-        Retrieves all Monster drinks available at a given store.
+        """Retrieves all Monster drinks available at a given store, sorted by most recently spotted.
 
         Args:
             store_id: The ID of the store.
 
         Returns:
-            List[Dict]: A list of dictionaries containing monster drink details.
+            List[Dict]: A list of dictionaries containing monster drink details and last spotted time.
         """
         availabilities = (
             StoreMonsterAvailability
             .select(StoreMonsterAvailability, MonsterDrink)
             .join(MonsterDrink)
             .where(StoreMonsterAvailability.store == store_id)
+            .order_by(StoreMonsterAvailability.updated_at.desc())
         )
 
         return [
             {
-                "id": availability.monster_drink.id,
-                "name": availability.monster_drink.name,
-                "flavour": availability.monster_drink.flavour,
-                "is_zero_sugar": availability.monster_drink.is_zero_sugar,
-                "image_url": availability.monster_drink.image_url,
+                "id": a.monster_drink.id,
+                "name": a.monster_drink.name,
+                "flavour": a.monster_drink.flavour,
+                "slug": a.monster_drink.slug,
+                "is_zero_sugar": a.monster_drink.is_zero_sugar,
+                "image_url": a.monster_drink.image_url,
+                "tag": a.monster_drink.tag,
+                "last_spotted_at": str(a.updated_at) if a.updated_at else None,
             }
-            for availability in availabilities
+            for a in availabilities
         ]
+
+    @classmethod
+    def get_stores(
+        cls,
+        latitude: Optional[float] = None,
+        longitude: Optional[float] = None,
+        limit: int = 20,
+        offset: int = 0,
+        search: Optional[str] = None,
+        flavour_slugs: Optional[List[str]] = None,
+        tags: Optional[List[int]] = None,
+        spotted_since: Optional[datetime] = None,
+    ) -> Dict[str, Any]:
+        """Returns a paginated list of stores with available monsters, sorted by distance if coordinates provided.
+
+        Args:
+            latitude: User's latitude coordinate. Optional — if omitted, results are sorted by name.
+            longitude: User's longitude coordinate. Optional — if omitted, results are sorted by name.
+            limit: Maximum number of stores to return per page.
+            offset: Number of stores to skip for pagination.
+            search: Free-text search across store names and monster names/flavours.
+            flavour_slugs: List of monster slugs to filter by.
+            tags: List of MonsterTag integer values to filter by.
+            spotted_since: Only include stores with spottings after this datetime.
+
+        Returns:
+            Dict[str, Any]: Paginated response with stores, total count, limit, and offset.
+        """
+        store_ids = cls._get_filtered_store_ids(search, flavour_slugs, tags, spotted_since)
+
+        if store_ids is not None and not store_ids:
+            return {"stores": [], "total": 0, "limit": limit, "offset": offset}
+
+        query = Store.select()
+        if store_ids is not None:
+            query = query.where(Store.id.in_(store_ids))
+
+        stores = list(query)
+        total = len(stores)
+
+        if latitude is not None and longitude is not None:
+            stores_ranked = [
+                (s, cls._haversine_distance(latitude, longitude, s.latitude, s.longitude))
+                for s in stores
+            ]
+            stores_ranked.sort(key=lambda x: x[1])
+        else:
+            stores_ranked = sorted(stores, key=lambda s: s.name)
+            stores_ranked = [(s, None) for s in stores_ranked]
+
+        page = stores_ranked[offset:offset + limit]
+
+        return {
+            "stores": [
+                {
+                    "id": store.id,
+                    "name": store.name,
+                    "address": store.address,
+                    "latitude": store.latitude,
+                    "longitude": store.longitude,
+                    "distance_km": round(distance, 2) if distance is not None else None,
+                    "available_monsters": cls.get_availability(store.id),
+                }
+                for store, distance in page
+            ],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+
+    @classmethod
+    def _get_filtered_store_ids(
+        cls,
+        search: Optional[str],
+        flavour_slugs: Optional[List[str]],
+        tags: Optional[List[int]],
+        spotted_since: Optional[datetime],
+    ) -> Optional[set]:
+        """Applies search, flavour, tag, and recency filters, returning matching store IDs.
+
+        Args:
+            search: Free-text search term for store name or monster name/flavour.
+            flavour_slugs: Monster slugs to require.
+            tags: MonsterTag integer values to require.
+            spotted_since: Minimum updated_at for availability rows.
+
+        Returns:
+            Optional[set]: Set of matching store IDs, or None if no filters were applied.
+        """
+        if not search and not flavour_slugs and not tags and not spotted_since:
+            return None
+
+        candidate_ids = None
+
+        if search:
+            by_name = set(
+                s.id for s in Store.select(Store.id).where(Store.name.icontains(search))
+            )
+            by_monster = set(
+                a.store_id for a in (
+                    StoreMonsterAvailability
+                    .select(StoreMonsterAvailability.store)
+                    .join(MonsterDrink)
+                    .where(
+                        MonsterDrink.name.icontains(search)
+                        | MonsterDrink.flavour.icontains(search)
+                    )
+                )
+            )
+            candidate_ids = by_name | by_monster
+
+        if flavour_slugs:
+            by_flavour = set(
+                a.store_id for a in (
+                    StoreMonsterAvailability
+                    .select(StoreMonsterAvailability.store)
+                    .join(MonsterDrink)
+                    .where(MonsterDrink.slug.in_(flavour_slugs))
+                )
+            )
+            candidate_ids = by_flavour if candidate_ids is None else candidate_ids & by_flavour
+
+        if tags:
+            by_tag = set(
+                a.store_id for a in (
+                    StoreMonsterAvailability
+                    .select(StoreMonsterAvailability.store)
+                    .join(MonsterDrink)
+                    .where(MonsterDrink.tag.in_(tags))
+                )
+            )
+            candidate_ids = by_tag if candidate_ids is None else candidate_ids & by_tag
+
+        if spotted_since:
+            by_recency = set(
+                a.store_id for a in (
+                    StoreMonsterAvailability
+                    .select(StoreMonsterAvailability.store)
+                    .where(StoreMonsterAvailability.updated_at >= spotted_since)
+                )
+            )
+            candidate_ids = by_recency if candidate_ids is None else candidate_ids & by_recency
+
+        return candidate_ids
+
+    @staticmethod
+    def get_store_detail(store_id: int) -> Dict[str, Any]:
+        """Returns full store detail with available monsters, recent spottings, and counts.
+
+        Args:
+            store_id: The ID of the store.
+
+        Returns:
+            Dict[str, Any]: Store info, available monsters, recent spotting images, and aggregate counts.
+        """
+        store = Store.get_by_id(store_id)
+
+        availabilities = (
+            StoreMonsterAvailability
+            .select(StoreMonsterAvailability, MonsterDrink)
+            .join(MonsterDrink)
+            .where(StoreMonsterAvailability.store == store_id)
+            .order_by(StoreMonsterAvailability.updated_at.desc())
+        )
+
+        recent_spottings = (
+            SpottingReport
+            .select(SpottingReport, MonsterDrink)
+            .join(MonsterDrink, on=(SpottingReport.matched_monster_drink == MonsterDrink.id))
+            .where(SpottingReport.matched_store == store_id)
+            .order_by(SpottingReport.created_at.desc())
+            .limit(10)
+        )
+
+        total_spottings = (
+            SpottingReport
+            .select()
+            .where(SpottingReport.matched_store == store_id)
+            .count()
+        )
+
+        return {
+            "id": store.id,
+            "name": store.name,
+            "address": store.address,
+            "latitude": store.latitude,
+            "longitude": store.longitude,
+            "flavour_count": availabilities.count(),
+            "total_spottings": total_spottings,
+            "available_monsters": [
+                {
+                    "id": a.monster_drink.id,
+                    "name": a.monster_drink.name,
+                    "flavour": a.monster_drink.flavour,
+                    "slug": a.monster_drink.slug,
+                    "is_zero_sugar": a.monster_drink.is_zero_sugar,
+                    "image_url": a.monster_drink.image_url,
+                    "tag": a.monster_drink.tag,
+                    "last_spotted_at": str(a.updated_at) if a.updated_at else None,
+                }
+                for a in availabilities
+            ],
+            "recent_spottings": [
+                {
+                    "id": r.id,
+                    "image_url": r.image_url,
+                    "created_at": str(r.created_at),
+                    "matched_monster": {
+                        "id": r.matched_monster_drink.id,
+                        "name": r.matched_monster_drink.name,
+                        "flavour": r.matched_monster_drink.flavour,
+                        "image_url": r.matched_monster_drink.image_url,
+                    },
+                }
+                for r in recent_spottings
+            ],
+        }
 
     @staticmethod
     def find_nearest_store(latitude: float, longitude: float) -> Optional[Store]:
-        """
-        Finds the nearest store to the given coordinates using Haversine approximation.
-        Only considers stores within a 1km radius.
+        """Finds the nearest store within 1km of the given coordinates.
 
         Args:
             latitude: The latitude coordinate.
@@ -73,8 +290,7 @@ class StoreRepository(BaseRepository):
     def _haversine_distance(
         latitude_1: float, longitude_1: float, latitude_2: float, longitude_2: float
     ) -> float:
-        """
-        Calculates the great-circle distance between two points on Earth.
+        """Calculates the great-circle distance in kilometres between two coordinate points.
 
         Args:
             latitude_1: Latitude of the first point in degrees.
