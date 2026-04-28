@@ -1,6 +1,6 @@
 # SpotSter API
 
-SpotSter is a Python Flask API backend for a Monster Energy drink spotting application. Users report sightings of Monster drinks by uploading photos with geographic coordinates. The backend processes the image through a vision LLM to identify the product, matches it to the nearest store, and updates a global availability map.
+Python Flask REST API for a Monster Energy drink spotting application. Users report sightings of Monster drinks by uploading photos with geographic coordinates. The API processes the image through a vision LLM to identify the product, matches it to the nearest store, and updates a global availability map.
 
 ## Features
 
@@ -10,41 +10,19 @@ SpotSter is a Python Flask API backend for a Monster Energy drink spotting appli
 *   **Store Detail:** Detailed store view with available monsters (sorted by last spotted), recent spotting images, and aggregate counts.
 *   **Vision Recognition Engine:** Strategy pattern with a `VisionProvider` abstraction. Swap LLM providers (Mistral, Anthropic, OpenAI) by implementing one method and updating the env config.
 *   **S3 Storage:** Image upload/deletion for both admin product images and user spotting photos. Compatible with any S3-compatible service (AWS, DigitalOcean Spaces, MinIO).
-*   **Dockerized:** API (Gunicorn) + PostgreSQL, ready to run with `docker-compose up`.
 
-## Prerequisites
+## Running
 
-1.  **Docker Desktop** (or Docker Engine + Docker Compose)
-2.  Any S3-compatible object storage (AWS S3, DigitalOcean Spaces, MinIO)
-3.  A Mistral API key (or another supported vision provider)
-4.  **(Optional)** Python 3.12+ if running outside Docker
+See [SpotSter-Infra](https://github.com/TODO/SpotSter-Infra) for Docker setup. To run standalone without Docker:
 
-## Initial Setup
+```bash
+cp .env.example .env
+# fill in values
+pip install -r requirements.txt
+python run.py
+```
 
-1.  **Clone the repository**
-
-2.  **Configure environment variables:**
-    ```bash
-    cp .env.example .env
-    ```
-    Fill in the required values:
-    *   `JWT_SECRET_KEY` — a strong random string (`openssl rand -hex 32`)
-    *   `S3_*` — your object storage credentials
-    *   `MISTRAL_API_KEY` — for image recognition
-    *   `ADMIN_EMAIL` / `ADMIN_PASSWORD` — initial admin credentials
-
-3.  **Build and start:**
-    ```bash
-    docker-compose up -d --build
-    ```
-    API runs on `http://localhost:5000`.
-
-4.  **Initialize the database:**
-    ```bash
-    docker-compose exec api flask db-health-check
-    docker-compose exec api flask db-migrate
-    docker-compose exec api flask seed-admin
-    ```
+Requires Python 3.12+ and a running PostgreSQL instance.
 
 ## API Workflows
 
@@ -194,20 +172,15 @@ config/               AppConfig (env-based)
 migrations/           Peewee-migrate migration scripts
 ```
 
-## Making Schema Changes
+## Schema Changes
 
-1.  Create a migration in `migrations/`:
-    ```bash
-    docker-compose exec api flask create-migration my_change_name
-    ```
-    Or write a manual migration file following the pattern in `migrations/`.
+```bash
+# Create a migration
+docker compose exec api flask create-migration my_change_name
 
-2.  Apply:
-    ```bash
-    docker-compose exec api flask db-migrate
-    ```
+# Apply
+docker compose exec api flask db-migrate
 
-3.  Rollback:
-    ```bash
-    docker-compose exec api flask db-rollback
-    ```
+# Rollback
+docker compose exec api flask db-rollback
+```
