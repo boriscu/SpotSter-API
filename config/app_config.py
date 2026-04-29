@@ -79,7 +79,7 @@ class AppConfig(BaseConfig):
             cls.S3_REGION = os.getenv("S3_REGION", "eu-central-1")
 
             cls.VISION_PROVIDER = os.getenv("VISION_PROVIDER", "mistral")
-            cls.VISION_MODEL = os.getenv("VISION_MODEL", "pixtral-large-latest")
+            cls.VISION_MODEL = os.getenv("VISION_MODEL", "pixtral-large-2411")
             cls.VISION_MIN_CONFIDENCE = float(os.getenv("VISION_MIN_CONFIDENCE", "0.6"))
             cls.MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
 

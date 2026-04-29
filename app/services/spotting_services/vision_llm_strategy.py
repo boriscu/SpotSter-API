@@ -1,5 +1,9 @@
 import json
+import traceback
+from io import BytesIO
 from typing import List
+
+from PIL import Image
 
 from app.models.pg.monster_drink import MonsterDrink
 from app.services.spotting_services.monster_recognition_engine import (
@@ -9,6 +13,8 @@ from app.services.spotting_services.monster_recognition_engine import (
 from app.services.spotting_services.vision_provider import VisionProvider
 from app.init.logger_setup import LoggerSetup
 from config.app_config import AppConfig
+
+MAX_VISION_DIMENSION = 768
 
 
 class VisionLLMRecognitionStrategy(RecognitionStrategy):
@@ -20,6 +26,7 @@ class VisionLLMRecognitionStrategy(RecognitionStrategy):
     def identify(self, image_data: bytes) -> RecognitionResult:
         """Builds a prompt from all known monsters, sends the image to the vision provider, and parses the result."""
         logger = LoggerSetup.get_logger("general")
+        error_logger = LoggerSetup.get_logger("errors")
 
         monsters = list(MonsterDrink.select())
         if not monsters:
@@ -29,18 +36,49 @@ class VisionLLMRecognitionStrategy(RecognitionStrategy):
             )
 
         prompt = self._build_prompt(monsters)
-        media_type = self._detect_media_type(image_data)
+        resized_data = self._downscale_for_vision(image_data)
+        media_type = self._detect_media_type(resized_data)
 
         try:
-            response_text = self._provider.analyze_image(image_data, prompt, media_type)
+            response_text = self._provider.analyze_image(resized_data, prompt, media_type)
         except Exception as e:
-            logger.error(f"Vision provider request failed: {e}")
+            tb = traceback.format_exc()
+            error_detail = f"Vision provider request failed: {type(e).__name__}: {e}"
+            logger.error(error_detail)
+            error_logger.error(f"{error_detail}\n{tb}")
+            rejection_reason = self._classify_provider_error(e)
             return RecognitionResult(
                 is_match=False,
-                rejection_reason="Image recognition service temporarily unavailable.",
+                rejection_reason=rejection_reason,
             )
 
         return self._parse_response(response_text, monsters)
+
+    @staticmethod
+    def _classify_provider_error(error: Exception) -> str:
+        """Returns a rejection reason that includes the original error for debugging."""
+        error_str = str(error).lower()
+        if "429" in error_str or "rate_limit" in error_str or "rate limit" in error_str:
+            category = "Rate-limited"
+        elif "401" in error_str or "403" in error_str or "auth" in error_str:
+            category = "Authentication failed"
+        elif "timeout" in error_str:
+            category = "Timed out"
+        else:
+            category = "Temporarily unavailable"
+        return f"Image recognition service: {category} — {error}"
+
+    @staticmethod
+    def _downscale_for_vision(image_data: bytes) -> bytes:
+        """Resizes the image so its longest side is at most MAX_VISION_DIMENSION, reducing token usage."""
+        img = Image.open(BytesIO(image_data))
+        if max(img.size) <= MAX_VISION_DIMENSION:
+            return image_data
+        img.thumbnail((MAX_VISION_DIMENSION, MAX_VISION_DIMENSION), Image.LANCZOS)
+        buf = BytesIO()
+        fmt = img.format or "JPEG"
+        img.save(buf, format=fmt, quality=85)
+        return buf.getvalue()
 
     @staticmethod
     def _build_prompt(monsters: List[MonsterDrink]) -> str:
