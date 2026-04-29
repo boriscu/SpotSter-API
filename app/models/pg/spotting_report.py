@@ -21,7 +21,7 @@ class SpottingReport(BaseModel):
     """
 
     id = AutoField()
-    image_url = TextField(null=False)
+    image_url = TextField(null=True)
     latitude = DoubleField(null=False)
     longitude = DoubleField(null=False)
     status = CharField(

@@ -5,7 +5,10 @@
       "Bash(python -c \"import mistralai; print\\(mistralai.__version__\\)\")",
       "Bash(docker compose *)",
       "Bash(docker-compose ps *)",
-      "Bash(curl -s -X POST 'http://localhost:5000/api/v1/public/spottings/' -H 'accept: application/json' -H 'Content-Type: multipart/form-data' -F 'file=@C:/Users/boris/Downloads/WhatsApp Image 2026-04-25 at 23.32.54.jpeg;type=image/jpeg' -F 'latitude=45.2525' -F 'longitude=19.7913')"
+      "Bash(curl -s -X POST 'http://localhost:5000/api/v1/public/spottings/' -H 'accept: application/json' -H 'Content-Type: multipart/form-data' -F 'file=@C:/Users/boris/Downloads/WhatsApp Image 2026-04-25 at 23.32.54.jpeg;type=image/jpeg' -F 'latitude=45.2525' -F 'longitude=19.7913')",
+      "Bash(curl -s -X POST 'http://localhost:5000/api/v1/public/spottings/' -H 'accept: application/json' -H 'Content-Type: multipart/form-data' -F 'file=@C:/Projekti/SpotSter/SpotSter-API/Dockerfile;type=image/jpeg;filename=blue.jpeg' -F 'latitude=45.25' -F 'longitude=19.79')",
+      "Bash(python *)",
+      "Bash(curl *)"
     ]
   }
 }

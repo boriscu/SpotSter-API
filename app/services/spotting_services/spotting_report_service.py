@@ -66,13 +66,10 @@ class SpottingReportService:
 
         cls._validate_image(file_data, filename)
 
-        image_url = cls._upload_image(file_data, filename, content_type)
-
         recognition_result = cls._get_recognition_engine().identify(file_data)
 
         if not recognition_result.is_match:
             report = SpottingReport.create(
-                image_url=image_url,
                 latitude=latitude,
                 longitude=longitude,
                 status=SpottingStatus.REJECTED.value,
@@ -82,6 +79,8 @@ class SpottingReportService:
             logger.info(f"Spotting rejected: {recognition_result.rejection_reason}")
 
             return cls._build_response(report)
+
+        image_url = cls._upload_image(file_data, filename, content_type)
 
         nearest_store = StoreRepository.find_nearest_store(latitude, longitude)
 
